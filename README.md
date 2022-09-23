@@ -5,7 +5,7 @@ For example:
 
 aaaaa - our sample 
 
-List:
+List:  
 aaaab  
 aaaac  
 abcde  
@@ -28,7 +28,7 @@ Let's use it for searching another closest match.
 Our next sample - Ella
 List: Adele Elaine Elizabeth Harriet Ingrid Michelle Ella
 
-Output:
+Output:  
 Ella      - exact match, no differences
 Michelle  - has the same substring 'ell', but has 5+ more letters and doesn't have 1 letter 'a' 
 Adele  
