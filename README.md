@@ -1,4 +1,4 @@
-# aproximate-match
+# approximate-match
 
 Let's assume we have a list of the words, and we want to find the closest match to another one - sample.
 For example:  
