@@ -101,7 +101,7 @@ func matchScore(sample string, sampleStats map[rune]RuneStat, word string) float
 	}
 
 	// Start with frequency counts from sample; decrement as we process word.
-	wordDiff := make(map[rune]int, len(sampleStats)+4)
+	wordDiff := make(map[rune]int, len(sampleStats))
 	for k, v := range sampleStats {
 		wordDiff[k] = v.num
 	}
