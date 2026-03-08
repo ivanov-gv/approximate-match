@@ -44,8 +44,8 @@ var normReplacements = [][2]string{
 func normalize(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, " ", "")
-	for _, r := range normReplacements {
-		s = strings.ReplaceAll(s, r[0], r[1])
+	for _, replacement := range normReplacements {
+		s = strings.ReplaceAll(s, replacement[0], replacement[1])
 	}
 	return s
 }
@@ -53,17 +53,17 @@ func normalize(s string) string {
 // consonantSkeleton removes all vowels from a (already normalized) string.
 // This lets the matcher handle severe vowel confusion, e.g. "padgareeka" → pdgrk ≈ pdgrc ← podgorica.
 func consonantSkeleton(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch r {
+	var builder strings.Builder
+	builder.Grow(len(s))
+	for _, char := range s {
+		switch char {
 		case 'a', 'e', 'i', 'o', 'u':
 			// drop vowel
 		default:
-			b.WriteRune(r)
+			builder.WriteRune(char)
 		}
 	}
-	return b.String()
+	return builder.String()
 }
 
 // buildRuneStats returns, for every character in s, its count and all
@@ -71,26 +71,26 @@ func consonantSkeleton(s string) string {
 // the substring-prefix matching in matchScore.
 func buildRuneStats(s string) map[rune]RuneStat {
 	stats := make(map[rune]RuneStat, len(s))
-	for i, ch := range s {
-		st := stats[ch]
-		st.num++
-		st.substrings = append(st.substrings, s[i:])
-		stats[ch] = st
+	for byteOffset, char := range s {
+		stat := stats[char]
+		stat.num++
+		stat.substrings = append(stat.substrings, s[byteOffset:])
+		stats[char] = stat
 	}
 	return stats
 }
 
-// calcDiff sums the absolute character-frequency deltas.
-func calcDiff(wordDiff map[rune]int) int {
-	d := 0
-	for _, v := range wordDiff {
-		if v > 0 {
-			d += v
+// calcAbsDiffSum sums the absolute character-frequency deltas.
+func calcAbsDiffSum(charFreqDelta map[rune]int) int {
+	total := 0
+	for _, delta := range charFreqDelta {
+		if delta > 0 {
+			total += delta
 		} else {
-			d -= v
+			total -= delta
 		}
 	}
-	return d
+	return total
 }
 
 // matchScore returns a value in [0, 1] measuring how closely word matches
@@ -101,56 +101,56 @@ func matchScore(sample string, sampleStats map[rune]RuneStat, word string) float
 	}
 
 	// Start with frequency counts from sample; decrement as we process word.
-	wordDiff := make(map[rune]int, len(sampleStats))
-	for k, v := range sampleStats {
-		wordDiff[k] = v.num
+	charFreqDelta := make(map[rune]int, len(sampleStats))
+	for char, stat := range sampleStats {
+		charFreqDelta[char] = stat.num
 	}
 
-	var maxSubstrLen int
-	for i, ch := range word {
-		wordDiff[ch]--
-		stat, found := sampleStats[ch]
+	var longestCommonSubstr int
+	for byteOffset, char := range word {
+		charFreqDelta[char]--
+		sampleStat, found := sampleStats[char]
 		if !found {
 			continue
 		}
-		if n := lenPrefix(word[i:], stat.substrings...); n > maxSubstrLen {
-			maxSubstrLen = n
+		if prefixLen := lenPrefix(word[byteOffset:], sampleStat.substrings...); prefixLen > longestCommonSubstr {
+			longestCommonSubstr = prefixLen
 		}
 	}
 
-	if maxSubstrLen == 0 {
+	if longestCommonSubstr == 0 {
 		return 0
 	}
 
 	// Normalise LCS length against the longer of the two strings.
-	maxLen := len(sample)
-	if len(word) > maxLen {
-		maxLen = len(word)
+	longerLen := len(sample)
+	if len(word) > longerLen {
+		longerLen = len(word)
 	}
-	lcsRatio := float64(maxSubstrLen) / float64(maxLen)
+	lcsRatio := float64(longestCommonSubstr) / float64(longerLen)
 
 	// Penalise by how many characters are unaccounted for (relative to total).
-	totalDiff := calcDiff(wordDiff)
-	diffRatio := float64(totalDiff) / float64(len(sample)+len(word))
+	totalUnmatchedChars := calcAbsDiffSum(charFreqDelta)
+	unmatchedRatio := float64(totalUnmatchedChars) / float64(len(sample)+len(word))
 
-	penalty := diffRatio
+	penalty := unmatchedRatio
 	if penalty > 1 {
 		penalty = 1
 	}
 	return lcsRatio * (1.0 - penalty)
 }
 
-// skelWeight slightly discounts skeleton-based matches vs. full-form matches,
-// because a consonant skeleton discards information.
-const skelWeight = 0.90
+// skeletonMatchWeight slightly discounts skeleton-based matches vs. full-form
+// matches, because a consonant skeleton discards vowel information.
+const skeletonMatchWeight = 0.90
 
 // indexedWord holds all precomputed representations of one entry in the search list.
 type indexedWord struct {
-	original  string
-	norm      string
-	skel      string
-	normStats map[rune]RuneStat
-	skelStats map[rune]RuneStat
+	original      string
+	normalized    string
+	skeleton      string
+	normalizedStats map[rune]RuneStat
+	skeletonStats   map[rune]RuneStat
 }
 
 // Match is a single result from Matcher.Find.
@@ -168,42 +168,42 @@ type Matcher struct {
 // NewMatcher builds and returns a Matcher for the given fixed word list.
 // All heavy preprocessing happens here so that each Find call is fast.
 func NewMatcher(words []string) *Matcher {
-	iw := make([]indexedWord, len(words))
-	for i, w := range words {
-		n := normalize(w)
-		sk := consonantSkeleton(n)
-		iw[i] = indexedWord{
-			original:  w,
-			norm:      n,
-			skel:      sk,
-			normStats: buildRuneStats(n),
-			skelStats: buildRuneStats(sk),
+	indexed := make([]indexedWord, len(words))
+	for i, word := range words {
+		normalized := normalize(word)
+		skeleton := consonantSkeleton(normalized)
+		indexed[i] = indexedWord{
+			original:        word,
+			normalized:      normalized,
+			skeleton:        skeleton,
+			normalizedStats: buildRuneStats(normalized),
+			skeletonStats:   buildRuneStats(skeleton),
 		}
 	}
-	return &Matcher{words: iw}
+	return &Matcher{words: indexed}
 }
 
 // Find returns all entries from the search list ranked by similarity to sample,
 // best first.  Entries with no commonality at all are omitted.
 func (m *Matcher) Find(sample string) []Match {
-	normSample := normalize(sample)
-	skelSample := consonantSkeleton(normSample)
+	normalizedSample := normalize(sample)
+	skeletonSample := consonantSkeleton(normalizedSample)
 
-	normSampleStats := buildRuneStats(normSample)
-	skelSampleStats := buildRuneStats(skelSample)
+	normalizedSampleStats := buildRuneStats(normalizedSample)
+	skeletonSampleStats := buildRuneStats(skeletonSample)
 
 	results := make([]Match, 0, len(m.words)/2)
 
-	for _, iw := range m.words {
-		ns := matchScore(normSample, normSampleStats, iw.norm)
-		ss := matchScore(skelSample, skelSampleStats, iw.skel) * skelWeight
+	for _, entry := range m.words {
+		normalizedScore := matchScore(normalizedSample, normalizedSampleStats, entry.normalized)
+		skeletonScore := matchScore(skeletonSample, skeletonSampleStats, entry.skeleton) * skeletonMatchWeight
 
-		score := ns
-		if ss > score {
-			score = ss
+		score := normalizedScore
+		if skeletonScore > score {
+			score = skeletonScore
 		}
 		if score > 0 {
-			results = append(results, Match{Word: iw.original, Score: score})
+			results = append(results, Match{Word: entry.original, Score: score})
 		}
 	}
 
