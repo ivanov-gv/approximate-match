@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// findSimilar is the original algorithm kept for backward compatibility.
+// New callers should prefer NewMatcher / Matcher.Find.
+
 // RuneStat contains num of occurrences and all substrings starting with this letter
 type RuneStat struct {
 	num        int
@@ -125,9 +128,9 @@ func main() {
 
 	sample := flag.Args()[0]
 	searchList := flag.Args()[1:]
-	result := findSimilar(sample, searchList)
 
-	for _, word := range result {
-		fmt.Println(word.word)
+	m := NewMatcher(searchList)
+	for _, match := range m.Find(sample) {
+		fmt.Printf("%s\t%.3f\n", match.Word, match.Score)
 	}
 }
