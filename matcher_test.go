@@ -9,20 +9,20 @@ import (
 )
 
 func TestScoreBounds(t *testing.T) {
-	m := approxmatch.NewMatcher([]string{"podgorica", "belgrade", "novisad"})
+	m := approxmatch.NewMatcher([]string{"podgorica", "belgrade", "novisad"}, nil)
 
 	t.Run("ExactMatchScoresHigh", func(t *testing.T) {
 		results := m.Find("podgorica")
 		require.NotEmpty(t, results, "no results for exact query")
-		assert.GreaterOrEqual(t, results[0].Score, 0.8,
+		assert.Greater(t, results[0].Score, approxmatch.DefaultScoreThreshold,
 			"exact match score too low: %.3f", results[0].Score)
 	})
 
 	t.Run("AllScoresInRange", func(t *testing.T) {
 		for _, query := range []string{"podgorica", "belgrade", "xyz", "novi sad"} {
 			for _, r := range m.Find(query) {
-				assert.GreaterOrEqual(t, r.Score, 0.0,
-					"query %q: score %.3f below 0 for %q", query, r.Score, r.Word)
+				assert.GreaterOrEqual(t, r.Score, approxmatch.DefaultScoreThreshold,
+					"query %q: score %.3f below threshold for %q", query, r.Score, r.Word)
 				assert.LessOrEqual(t, r.Score, 1.0,
 					"query %q: score %.3f above 1 for %q", query, r.Score, r.Word)
 			}
@@ -33,12 +33,12 @@ func TestScoreBounds(t *testing.T) {
 func BenchmarkNewMatcher(b *testing.B) {
 	words := []string{"podgorica", "belgrade", "novisad", "sarajevo", "tirana"}
 	for i := 0; i < b.N; i++ {
-		approxmatch.NewMatcher(words)
+		approxmatch.NewMatcher(words, nil)
 	}
 }
 
 func BenchmarkFind(b *testing.B) {
-	m := approxmatch.NewMatcher([]string{"podgorica", "belgrade", "novisad", "sarajevo", "tirana"})
+	m := approxmatch.NewMatcher([]string{"podgorica", "belgrade", "novisad", "sarajevo", "tirana"}, nil)
 	queries := []string{"belgrade", "podgorica", "padgareeka", "sjutamare", "belo pole"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

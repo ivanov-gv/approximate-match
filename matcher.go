@@ -6,6 +6,13 @@ import "sort"
 // matches, because a consonant skeleton discards vowel information.
 const skeletonMatchWeight = 0.90
 
+// DefaultScoreThreshold is the minimum score a candidate must reach to be
+// included in Find results when no explicit threshold is provided to NewMatcher.
+// It is set just above the typical score for common transliteration noise
+// (e.g. "london" → 0.40 against Balkan station names), while staying below
+// the score produced by single-character-deletion typos (e.g. "belgade" → 0.48).
+const DefaultScoreThreshold = 0.45
+
 // indexedWord holds all precomputed representations of one entry in the search list.
 type indexedWord struct {
 	original        string
@@ -24,12 +31,19 @@ type Match struct {
 // Matcher holds a fixed search list with precomputed statistics.
 // Construct once with NewMatcher, then call Find for every user query.
 type Matcher struct {
-	words []indexedWord
+	words          []indexedWord
+	scoreThreshold float64
 }
 
 // NewMatcher builds and returns a Matcher for the given fixed word list.
 // All heavy preprocessing happens here so that each Find call is fast.
-func NewMatcher(words []string) *Matcher {
+// threshold sets the minimum score for a result to be returned by Find;
+// pass nil to use DefaultScoreThreshold.
+func NewMatcher(words []string, threshold *float64) *Matcher {
+	scoreThreshold := DefaultScoreThreshold
+	if threshold != nil {
+		scoreThreshold = *threshold
+	}
 	indexed := make([]indexedWord, len(words))
 	for i, word := range words {
 		normalized := Normalize(word)
@@ -42,7 +56,7 @@ func NewMatcher(words []string) *Matcher {
 			skeletonStats:   buildRuneStats(skeleton),
 		}
 	}
-	return &Matcher{words: indexed}
+	return &Matcher{words: indexed, scoreThreshold: scoreThreshold}
 }
 
 // Find returns all entries from the search list ranked by similarity to sample,
@@ -64,7 +78,7 @@ func (m *Matcher) Find(sample string) []Match {
 		if skeletonScore > score {
 			score = skeletonScore
 		}
-		if score > 0 {
+		if score >= m.scoreThreshold {
 			results = append(results, Match{Word: entry.original, Score: score})
 		}
 	}
