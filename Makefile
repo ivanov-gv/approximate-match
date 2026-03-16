@@ -1,6 +1,13 @@
 APP_NAME?=matcher
 BUILD_DIR=build
 
+lint:
+	golangci-lint run ./...
+
+.PHONY: test
+test:
+	go test -count=1 ./...
+
 clean:
 	rm -f ${BUILD_DIR}/${APP_NAME}
 
