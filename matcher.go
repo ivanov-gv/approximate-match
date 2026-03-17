@@ -121,10 +121,7 @@ func matchScore(sample string, sampleStats map[rune]RuneStat, word string) float
 	}
 
 	// Normalise LCS length against the longer of the two strings.
-	longerLen := len(sample)
-	if len(word) > longerLen {
-		longerLen = len(word)
-	}
+	longerLen := max(len(word), len(sample))
 	lcsRatio := float64(longestCommonSubstr) / float64(longerLen)
 
 	// When the sample is entirely a leading prefix of the word (both strings start

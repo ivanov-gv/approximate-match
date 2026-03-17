@@ -31,7 +31,6 @@ func TestNormalize(t *testing.T) {
 		{"DigraphNJ", "nj", "n"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, approxmatch.Normalize(tc.in))
 		})
@@ -65,7 +64,6 @@ func TestNormalizeCyrillic(t *testing.T) {
 		{"SpaceStripped", "нови сад", "новисад"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, approxmatch.Normalize(tc.in))
 		})
@@ -95,7 +93,6 @@ func TestConsonantSkeleton(t *testing.T) {
 		{"CyrillicSusanjSkeleton", "шушан", "шшн"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, approxmatch.ConsonantSkeleton(tc.in))
 		})

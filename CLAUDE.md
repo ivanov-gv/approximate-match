@@ -21,9 +21,8 @@ cmd/
   main.go               main() only — demo entry point
 
 test/
-  stations.go           Test fixture: ~200 station name → ID mappings
+  stations.go           Test fixture: StationData struct + Stations slice
   matcher_test.go       Integration tests (all linguistic test groups)
-  helpers_test.go       Test helpers: topN(), assertTopID(), assertTopIDNot()
 
 matcher_test.go         Unit tests: score bounds, benchmarks (root package)
 normalize_test.go       Unit tests: Normalize() and ConsonantSkeleton() cases
@@ -78,11 +77,110 @@ Results with score > 0 are returned sorted descending.
 
 - Use `github.com/stretchr/testify` for all assertions:
   - `assert` — non-fatal checks; the test continues and reports all failures at once.
-  - `require` — fatal checks where continuing would panic or produce meaningless results (e.g. checking `results[0]` after verifying `len(results) > 0`).
+  - `require` — fatal checks where continuing would panic or produce meaningless results (e.g. checking `results[0]`
+    after verifying `len(results) > 0`), or where the failure represents an invariant that must never be violated (e.g.
+    `require.Empty` for false-positive checks).
 - Use `t.Run()` for every logical group of sub-cases (exact matches, typos, phonetic variants, etc.).
-- Use table-driven tests (`[]struct{ ... }` + a loop) instead of repeating the same assertion call with different arguments.
-- Keep test helpers in `helpers_test.go`, not mixed into the main test file.
+- Use table-driven tests (`[]struct{ ... }` + a loop) instead of repeating the same assertion call with different
+  arguments. This applies even when the struct has extra fields like `mustNotNames []string` alongside
+  `wantName string`.
+- When sub-tests share identical loop logic but have different inputs, define a local `run` helper *inside* the parent
+  test function (not at package level) and pass the cases slice to it:
+
+```go
+func TestDisambiguation(t *testing.T) {
+matcher := ...
+
+run := func (t *testing.T, cases []struct {
+query        string
+wantName     string
+mustNotNames []string
+}) {
+t.Helper()
+for _, tc := range cases {
+t.Run(tc.query, func (t *testing.T) { ... })
+}
+}
+
+t.Run("BelgradeFamily", func (t *testing.T) {
+run(t, []struct{ ... }{
+{"belgrade", "Beograd Centar", []string{"Novi Sad"}},
+...
+})
+})
+}
+```
+
+- Do not add `t.Skip` to paper over data gaps.
 - Integration tests live in `test/matcher_test.go`; unit tests for each source file live alongside it in the root package.
+
+### Test Data and `github.com/samber/lo`
+
+Use `github.com/samber/lo` for all common data reshaping — it is far more readable than manual loops:
+
+```go
+lo.Keys(m) // map → key slice (replaces: for k := range m { keys = append(keys, k) })
+lo.Filter(s, fn) // keep elements matching a predicate
+lo.Compact(s) // remove zero values (empty strings, 0, nil, …)
+lo.Uniq(s)    // deduplicate a slice
+```
+
+Shared test fixtures (lookup maps, derived slices) that are used across multiple tests should be **package-level
+variables initialized with an IIFE** (immediately-invoked function expression), not helper functions:
+
+```go
+// Good — data lives in a var; the lambda that builds it has no name and can't be called elsewhere
+var nameToStationName = func () map[string]string {
+result := make(map[string]string)
+for _, station := range integration.Stations {
+allNames := lo.Compact(append([]string{station.Name, station.NameEn, station.NameCyr}, station.ProductionAliases...))
+for _, name := range allNames {
+result[name] = station.Name
+}
+}
+return result
+}()
+```
+
+### Break complex expressions into named local variables
+
+Avoid chaining operations or nesting calls when the result has a meaningful name. Each intermediate variable should
+express one clear thought; the reader should be able to understand the code by reading it like a sentence.
+
+```go
+// Bad — one dense line that requires parsing from inside out
+for _, station := range lo.Filter(integration.Stations, func (s integration.StationData, _ int) bool { return !s.Blacklisted }) {
+for _, name := range lo.Uniq(lo.Compact([]string{station.Name, station.NameEn, station.NameCyr})) {
+
+// Good — each step has a name that explains what it is
+nonBlacklistedStations := lo.Filter(integration.Stations, func (s integration.StationData, _ int) bool {
+return !s.Blacklisted
+})
+for _, station := range nonBlacklistedStations {
+officialNames := lo.Uniq(lo.Compact([]string{station.Name, station.NameEn, station.NameCyr}))
+for _, name := range officialNames {
+```
+
+This applies everywhere, not just in tests: if a sub-expression has a name, give it one.
+
+Do **not** wrap simple, one-liner constructor calls in named helper functions. Construct objects inline where they are
+used:
+
+```go
+// Good
+matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
+
+// Bad — unnecessary indirection that obscures what is actually constructed
+func newUnifiedMatcher() (*approxmatch.Matcher, map[string]string) { ... }
+matcher, stationToName := newUnifiedMatcher()
+```
+
+If a custom threshold is needed in one test, pass it inline with a local variable:
+
+```go
+strictThreshold := 0.6
+matcher := approxmatch.NewMatcher(lo.Keys(officialNameToStationName), &strictThreshold)
+```
 
 ## Diacritics and Unicode Normalization
 
@@ -104,3 +202,4 @@ Linting is configured in `.golangci.yml`. Enabled linter groups: correctness (`e
 
 - `golang.org/x/text` — Unicode normalization (`norm`, `runes`, `transform`).
 - `github.com/stretchr/testify` — test assertions (`assert`, `require`).
+- `github.com/samber/lo` — generic slice/map utilities (`lo.Keys`, `lo.Filter`, `lo.Without`, `lo.Uniq`, …).

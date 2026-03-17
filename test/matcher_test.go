@@ -3,6 +3,7 @@ package integration_test
 import (
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -10,159 +11,195 @@ import (
 	integration "github.com/ivanov-gv/approximate-match/test"
 )
 
+// nameToStationName maps every indexed name (Name, NameEn, NameCyr, and
+// ProductionAliases) of every station to the station's canonical Name field.
+var nameToStationName = func() map[string]string {
+	result := make(map[string]string)
+	for _, station := range integration.Stations {
+		allNames := lo.Compact(append([]string{station.Name, station.NameEn, station.NameCyr}, station.ProductionAliases...))
+		for _, name := range allNames {
+			result[name] = station.Name
+		}
+	}
+	return result
+}()
+
+// officialNameToStationName maps all names of non-blacklisted stations
+// (Name, NameEn, NameCyr, and ProductionAliases) to the station's canonical
+// Name field. ProductionAliases are included so that every alias resolves
+// correctly when searched in the official index.
+var officialNameToStationName = func() map[string]string {
+	result := make(map[string]string)
+	nonBlacklistedStations := lo.Filter(integration.Stations, func(s integration.StationData, _ int) bool {
+		return !s.Blacklisted
+	})
+	for _, station := range nonBlacklistedStations {
+		allNames := lo.Uniq(lo.Compact(append(
+			[]string{station.Name, station.NameEn, station.NameCyr},
+			station.ProductionAliases...,
+		)))
+		for _, name := range allNames {
+			result[name] = station.Name
+		}
+	}
+	return result
+}()
+
 func TestPositiveCases(t *testing.T) {
-	matcher, stationNameToID := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 
 	t.Run("ExactMatches", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"podgorica", 4},
-			{"Podgorica", 4},
-			{"PODGORICA", 4},
-			{"bar", 1},
-			{"kotor", -14},
-			{"budva", -10},
-			{"tivat", -12},
-			{"tirana", -38},
-			{"novisad", 0},
-			{"niksic", 56},
-			{"sarajevo", -44},
-			{"subotica", -8},
+			{"podgorica", "Podgorica"},
+			{"Podgorica", "Podgorica"},
+			{"PODGORICA", "Podgorica"},
+			{"bar", "Bar"},
+			{"kotor", "Kotor"},
+			{"budva", "Budva"},
+			{"tivat", "Tivat"},
+			{"tirana", "Tirana"},
+			{"novisad", "Novi Sad"},
+			{"niksic", "Nikšić"},
+			{"sarajevo", "Sarajevo"},
+			{"subotica", "Subotica"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 
 	t.Run("SpacedNames", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"novi sad", 0},
-			{"nova pazova", -6},
-			{"stara pazova", -4},
-			{"bijelo polje", 7},
-			{"herceg novi", -30},
-			{"beograd centar", 18},
+			{"novi sad", "Novi Sad"},
+			{"nova pazova", "Nova Pazova"},
+			{"stara pazova", "Stara Pazova"},
+			{"bijelo polje", "Bijelo Polje"},
+			{"herceg novi", "Herceg Novi"},
+			{"beograd centar", "Beograd Centar"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 
 	t.Run("MinorTypos", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"belgarde", 18},   // transposition
-			{"belgade", 18},    // missing r
-			{"belgrate", 18},   // transposition r/t
-			{"podgorcia", 4},   // transposition c/i
-			{"sutmore", 2},     // missing o
-			{"kolasin", 5},
-			{"sutomore", 2},
-			{"mojkovac", 6},
-			{"bijelopolje", 7},
+			{"belgarde", "Beograd Centar"}, // transposition
+			{"belgade", "Beograd Centar"},  // missing r
+			{"belgrate", "Beograd Centar"}, // transposition r/t
+			{"podgorcia", "Podgorica"},     // transposition c/i
+			{"sutmore", "Sutomore"},        // missing o
+			{"kolasin", "Kolašin"},
+			{"sutomore", "Sutomore"},
+			{"mojkovac", "Mojkovac"},
+			{"bijelopolje", "Bijelo Polje"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 }
 
 func TestPhoneticCases(t *testing.T) {
-	matcher, stationNameToID := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 
 	t.Run("VowelShifts", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"padgareeka", 4}, // "pod-go-REE-ka" heard as "padgareeka"
-			{"podgoriika", 4}, // doubled vowel
-			{"podgoorica", 4}, // "oo" → u normalisation
-			{"sjutamare", 2},  // vowel shifts + spurious j
-			{"sutomare", 2},   // o→a vowel confusion
+			{"padgareeka", "Podgorica"}, // "pod-go-REE-ka" heard as "padgareeka"
+			{"podgoriika", "Podgorica"}, // doubled vowel
+			{"podgoorica", "Podgorica"}, // "oo" → u normalisation
+			{"sjutamare", "Sutomore"},   // vowel shifts + spurious j
+			{"sutomare", "Sutomore"},    // o→a vowel confusion
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 
 	t.Run("EkavicaIjekavica", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"belo pole", 7},
-			{"belo polje", 7},
-			{"bijelo polje", 7},
+			{"belo pole", "Bijelo Polje"},
+			{"belo polje", "Bijelo Polje"},
+			{"bijelo polje", "Bijelo Polje"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 
 	t.Run("TransliterationVariants", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"niksic", 56},
-			{"priboj", 10},
-			{"belgrade", 18},
-			{"Belgrade", 18},
-			{"novi sad", 0},
-			{"Novi Sad", 0},
-			{"shkoder", -40},
+			{"niksic", "Nikšić"},
+			{"nickshicsh", "Nikšić"},
+			{"priboj", "Priboj"},
+			{"belgrade", "Beograd Centar"},
+			{"Belgrade", "Beograd Centar"},
+			{"novi sad", "Novi Sad"},
+			{"Novi Sad", "Novi Sad"},
+			{"shkoder", "Shkoder"},
+			{"shushann", "Šušanj"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
@@ -170,188 +207,208 @@ func TestPhoneticCases(t *testing.T) {
 	t.Run("RussianTsForC", func(t *testing.T) {
 		// "ts" has no explicit rule; consonant skeleton bridges pdgrtsk → pdgrc.
 		results := matcher.Find("podgoritsa")
-		require.NotEmpty(t, results, "query 'podgoritsa': got no results, want station ID 4")
-		gotID := stationNameToID[results[0].Word]
-		assert.Equal(t, 4, gotID,
-			"query 'podgoritsa': top result %q (ID %d) should be Podgorica (ID 4)",
-			results[0].Word, gotID)
+		require.NotEmpty(t, results, "query 'podgoritsa': got no results, want Podgorica")
+		gotName := nameToStationName[results[0].Word]
+		assert.Equal(t, "Podgorica", gotName,
+			"query 'podgoritsa': top result %q maps to %q, want Podgorica",
+			results[0].Word, gotName)
 	})
 }
 
 func TestDisambiguation(t *testing.T) {
-	matcher, stationNameToID := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
+
+	run := func(t *testing.T, cases []struct {
+		query        string
+		wantName     string
+		mustNotNames []string
+	}) {
+		t.Helper()
+		for _, tc := range cases {
+			t.Run(tc.query, func(t *testing.T) {
+				results := matcher.Find(tc.query)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
+				for _, mustNot := range tc.mustNotNames {
+					assert.NotEqual(t, mustNot, gotName,
+						"query %q: must not surface %q", tc.query, mustNot)
+				}
+			})
+		}
+	}
 
 	t.Run("BelgradeFamily", func(t *testing.T) {
-		results := matcher.Find("belgrade")
-		require.NotEmpty(t, results, "no results for 'belgrade'")
-		gotID := stationNameToID[results[0].Word]
-		assert.Equal(t, 18, gotID,
-			"'belgrade': top result %q (ID %d) should be Beograd Centar (ID 18)", results[0].Word, gotID)
-		assert.NotEqual(t, 0, gotID,
-			"'belgrade': must not surface Novi Sad (ID 0)")
-
-		results = matcher.Find("beograd")
-		require.NotEmpty(t, results, "no results for 'beograd'")
-		assert.NotEqual(t, 0, stationNameToID[results[0].Word],
-			"'beograd': must not surface Novi Sad (ID 0), got %q", results[0].Word)
-
-		results = matcher.Find("beograd centar")
-		require.NotEmpty(t, results, "no results for 'beograd centar'")
-		assert.Equal(t, 18, stationNameToID[results[0].Word],
-			"'beograd centar': top result %q should be Beograd Centar (ID 18)", results[0].Word)
+		run(t, []struct {
+			query        string
+			wantName     string
+			mustNotNames []string
+		}{
+			{"belgrade", "Beograd Centar", []string{"Novi Sad"}},
+			{"beograd", "Beograd Centar", []string{"Novi Sad"}},
+			{"beograd centar", "Beograd Centar", nil},
+		})
 	})
 
 	t.Run("NoviSadVsPazova", func(t *testing.T) {
-		results := matcher.Find("novi sad")
-		require.NotEmpty(t, results, "no results for 'novi sad'")
-		gotID := stationNameToID[results[0].Word]
-		assert.Equal(t, 0, gotID,
-			"'novi sad': top result %q (ID %d) should be Novi Sad (ID 0)", results[0].Word, gotID)
-		assert.NotEqual(t, -6, gotID, "'novi sad': must not surface Nova Pazova (ID -6)")
-		assert.NotEqual(t, -4, gotID, "'novi sad': must not surface Stara Pazova (ID -4)")
-
-		results = matcher.Find("nova pazova")
-		require.NotEmpty(t, results, "no results for 'nova pazova'")
-		gotID = stationNameToID[results[0].Word]
-		assert.Equal(t, -6, gotID,
-			"'nova pazova': top result %q (ID %d) should be Nova Pazova (ID -6)", results[0].Word, gotID)
-		assert.NotEqual(t, -4, gotID, "'nova pazova': must not surface Stara Pazova (ID -4)")
-		assert.NotEqual(t, 0, gotID, "'nova pazova': must not surface Novi Sad (ID 0)")
-
-		results = matcher.Find("stara pazova")
-		require.NotEmpty(t, results, "no results for 'stara pazova'")
-		gotID = stationNameToID[results[0].Word]
-		assert.Equal(t, -4, gotID,
-			"'stara pazova': top result %q (ID %d) should be Stara Pazova (ID -4)", results[0].Word, gotID)
-		assert.NotEqual(t, -6, gotID, "'stara pazova': must not surface Nova Pazova (ID -6)")
+		run(t, []struct {
+			query        string
+			wantName     string
+			mustNotNames []string
+		}{
+			{"novi sad", "Novi Sad", []string{"Nova Pazova", "Stara Pazova"}},
+			{"nova pazova", "Nova Pazova", []string{"Stara Pazova", "Novi Sad"}},
+			{"stara pazova", "Stara Pazova", []string{"Nova Pazova"}},
+		})
 	})
 
 	t.Run("ShortNames", func(t *testing.T) {
-		results := matcher.Find("bar")
-		require.NotEmpty(t, results, "no results for 'bar'")
-		assert.Equal(t, 1, stationNameToID[results[0].Word],
-			"'bar': top result %q should be Bar (ID 1)", results[0].Word)
-
-		results = matcher.Find("kotor")
-		require.NotEmpty(t, results, "no results for 'kotor'")
-		gotID := stationNameToID[results[0].Word]
-		assert.Equal(t, -14, gotID,
-			"'kotor': top result %q (ID %d) should be Kotor (ID -14)", results[0].Word, gotID)
-		assert.NotEqual(t, 5, gotID, "'kotor': must not surface Kolašin (ID 5)")
-		assert.NotEqual(t, 13, gotID, "'kotor': must not surface Kosjerić (ID 13)")
+		run(t, []struct {
+			query        string
+			wantName     string
+			mustNotNames []string
+		}{
+			{"bar", "Bar", nil},
+			{"kotor", "Kotor", []string{"Kolašin", "Kosjerić"}},
+		})
 	})
 
 	t.Run("CompoundNames", func(t *testing.T) {
-		results := matcher.Find("prijepolje")
-		require.NotEmpty(t, results, "no results for 'prijepolje'")
-		assert.Equal(t, 9, stationNameToID[results[0].Word],
-			"'prijepolje': top result %q should be Prijepolje (ID 9)", results[0].Word)
+		run(t, []struct {
+			query        string
+			wantName     string
+			mustNotNames []string
+		}{
+			{"prijepolje", "Prijepolje", nil},
+			{"tirana", "Tirana", nil},
+		})
+	})
 
-		results = matcher.Find("tirana")
-		require.NotEmpty(t, results, "no results for 'tirana'")
-		assert.Equal(t, -38, stationNameToID[results[0].Word],
-			"'tirana': top result %q should be Tirana (ID -38)", results[0].Word)
+	// These four stations share tokens ("novi", "beograd") that cause frequent
+	// cross-matches. Each query must surface its own station at the top.
+	t.Run("NoviBeogradHercegNoviFamily", func(t *testing.T) {
+		run(t, []struct {
+			query        string
+			wantName     string
+			mustNotNames []string
+		}{
+			// Novi Beograd must not surface as Beograd Centar or Novi Sad.
+			{"novi beograd", "Novi Beograd", []string{"Beograd Centar", "Novi Sad", "Herceg Novi"}},
+			{"novibeograd", "Novi Beograd", []string{"Beograd Centar", "Novi Sad"}},
+			{"novi belgrado", "Novi Beograd", []string{"Beograd Centar", "Novi Sad"}},
+			{"novi beograde", "Novi Beograd", []string{"Beograd Centar", "Novi Sad"}}, // minor typo
+			{"новый белград", "Novi Beograd", []string{"Beograd Centar", "Novi Sad"}}, // minor typo
+			{"нови белград", "Novi Beograd", []string{"Beograd Centar", "Novi Sad"}},  // minor typo
+			{"нови београд", "Novi Beograd", []string{"Beograd Centar", "Novi Sad"}},  // minor typo
+
+			// Herceg Novi must not surface as Novi Sad or Novi Beograd.
+			{"herceg novi", "Herceg Novi", []string{"Novi Sad", "Novi Beograd"}},
+			{"hercegnovi", "Herceg Novi", []string{"Novi Sad", "Novi Beograd"}},
+			{"hertzeg novi", "Herceg Novi", []string{"Novi Sad", "Novi Beograd"}}, // ch/tz transliteration
+			{"херцег нови", "Herceg Novi", []string{"Novi Sad", "Novi Beograd"}},  // ch/tz transliteration
+			{"герцег нови", "Herceg Novi", []string{"Novi Sad", "Novi Beograd"}},  // ch/tz transliteration
+
+			// Beograd Centar must win over Novi Beograd for bare "beograd".
+			{"beograd", "Beograd Centar", []string{"Novi Beograd"}},
+			{"belgrade", "Beograd Centar", []string{"Novi Beograd"}},
+			{"белград", "Beograd Centar", []string{"Novi Beograd"}},
+
+			// Novi Sad must win over Novi Beograd for bare "novi sad".
+			{"novi sad", "Novi Sad", []string{"Novi Beograd", "Herceg Novi"}},
+			{"нови сад", "Novi Sad", []string{"Novi Beograd", "Herceg Novi"}},
+			{"новый сад", "Novi Sad", []string{"Novi Beograd", "Herceg Novi"}},
+		})
 	})
 }
 
 func TestFalsePositives(t *testing.T) {
-	matcher, _ := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 
-	t.Run("UnrelatedInputsHaveLowScore", func(t *testing.T) {
-		for _, query := range []string{"london", "chicago"} {
-			t.Run(query, func(t *testing.T) {
-				results := matcher.Find(query)
-				assert.Empty(t, results,
-					"query %q: expected no results above score threshold", query)
-			})
-		}
-	})
-
-	t.Run("BerlinDoesNotMatchUnrelated", func(t *testing.T) {
-		_, stationNameToID := newUnifiedMatcher()
-		results := matcher.Find("berlin")
-		if len(results) > 0 {
-			gotID := stationNameToID[results[0].Word]
-			assert.NotEqual(t, 4, gotID, "'berlin': must not surface Podgorica (ID 4), got %q", results[0].Word)
-			assert.NotEqual(t, -38, gotID, "'berlin': must not surface Tirana (ID -38), got %q", results[0].Word)
-		}
-	})
+	for _, query := range []string{"london", "chicago", "berlin"} {
+		t.Run(query, func(t *testing.T) {
+			results := matcher.Find(query)
+			require.Empty(t, results,
+				"query %q: expected no results above score threshold", query)
+		})
+	}
 }
 
 func TestFalseNegatives(t *testing.T) {
-	matcher, stationNameToID := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 
 	cases := []struct {
-		query  string
-		wantID int
+		query    string
+		wantName string
 	}{
-		{"padgareeka", 4},
-		{"podgoritsa", 4},
-		{"bar", 1},
-		{"kos", 34},
-		{"bijelo polje", 7},
-		{"beograd centar", 18},
-		{"herceg novi", -30},
+		{"padgareeka", "Podgorica"},
+		{"podgoritsa", "Podgorica"},
+		{"bar", "Bar"},
+		{"kos", "Kos"},
+		{"bijelo polje", "Bijelo Polje"},
+		{"beograd centar", "Beograd Centar"},
+		{"herceg novi", "Herceg Novi"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
 			results := matcher.Find(tc.query)
-			require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-			gotID := stationNameToID[results[0].Word]
-			assert.Equal(t, tc.wantID, gotID,
-				"query %q: top result %q (ID %d) should be station ID %d",
-				tc.query, results[0].Word, gotID, tc.wantID)
+			require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+			gotName := nameToStationName[results[0].Word]
+			assert.Equal(t, tc.wantName, gotName,
+				"query %q: top result %q maps to %q, want %q",
+				tc.query, results[0].Word, gotName, tc.wantName)
 		})
 	}
 }
 
 func TestCyrillicCases(t *testing.T) {
-	matcher, stationNameToID := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 
 	t.Run("ExactMatches", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"подгорица", 4},
-			{"бар", 1},
-			{"сутоморе", 2},
-			{"новисад", -1},
-			{"никшић", 56},
-			{"тирана", -39},
-			{"мојковац", 6},
+			{"подгорица", "Podgorica"},
+			{"бар", "Bar"},
+			{"сутоморе", "Sutomore"},
+			{"нови сад", "Novi Sad"},
+			{"никшић", "Nikšić"},
+			{"тирана", "Tirana"},
+			{"мојковац", "Mojkovac"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 
 	t.Run("SpacedNames", func(t *testing.T) {
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"нови сад", -1},    // space stripped → новисад
-			{"бело поле", 7},   // space stripped → белополе
-			{"бијело поље", 7}, // space stripped → бијелопоље
-			{"херцег нови", -31},
-			{"београд центар", 18},
+			{"нови сад", "Novi Sad"},      // space stripped → новисад
+			{"бело поле", "Bijelo Polje"}, // space stripped → белополе
+			{"бијело поље", "Bijelo Polje"},
+			{"херцег нови", "Herceg Novi"},
+			{"београд центар", "Beograd Centar"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
@@ -360,23 +417,23 @@ func TestCyrillicCases(t *testing.T) {
 		// Russian writes Serbian lj/nj sounds as "ль"/"нь"; normalization collapses
 		// both to the base consonant so they match the Serbian Cyrillic ligature form.
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"льешница", 45},   // Russian ль ≈ Serbian љ
-			{"шушань", 20},     // Russian нь ≈ Serbian њ
-			{"вальево", 14},    // Russian ль ≈ Serbian љ
-			{"враньина", 23},   // Russian нь ≈ Serbian њ
-			{"требальево", 38}, // Russian ль ≈ Serbian љ
+			{"льешница", "Lješnica"},     // Russian ль ≈ Serbian љ
+			{"шушань", "Šušanj"},         // Russian нь ≈ Serbian њ
+			{"вальево", "Valjevo"},       // Russian ль ≈ Serbian љ
+			{"враньина", "Vranjina"},     // Russian нь ≈ Serbian њ
+			{"требальево", "Trebaljevo"}, // Russian ль ≈ Serbian љ
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
@@ -384,20 +441,20 @@ func TestCyrillicCases(t *testing.T) {
 	t.Run("RussianVowelVariants", func(t *testing.T) {
 		// Russian ю → у and ы → и let Russian and Serbian spellings converge.
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"лютотук", 48},  // Russian ю ≈ Serbian у after soft consonant (лю ≈ љу)
-			{"голубовцы", 3}, // Russian ы ≈ Serbian и at word end
+			{"лютотук", "Ljutotuk"},    // Russian ю ≈ Serbian у after soft consonant (лю ≈ љу)
+			{"голубовцы", "Golubovci"}, // Russian ы ≈ Serbian и at word end
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
@@ -406,30 +463,30 @@ func TestCyrillicCases(t *testing.T) {
 		// Russian transliteration of Serbian station names uses different letters
 		// for Serbian ћ (→ ч) and ј (→ и/й).
 		cases := []struct {
-			query  string
-			wantID int
+			query    string
+			wantName string
 		}{
-			{"братоношичи", 29}, // Russian ч ≈ Serbian ћ in братоношићи
-			{"никшич", 56},     // Russian ч ≈ Serbian ћ in никшић
-			{"моиковац", 6},    // Russian и ≈ Serbian ј in мојковац
-			{"прибои", 10},     // Russian и ≈ Serbian ј in прибој
-			{"лаиковац", 15},   // Russian и ≈ Serbian ј in лајковац
+			{"братоношичи", "Bratonožići"}, // Russian ч ≈ Serbian ћ in братоношићи
+			{"никшич", "Nikšić"},           // Russian ч ≈ Serbian ћ in никшић
+			{"моиковац", "Mojkovac"},       // Russian и ≈ Serbian ј in мојковац
+			{"прибои", "Priboj"},           // Russian и ≈ Serbian ј in прибој
+			{"лаиковац", "Lajkovac"},       // Russian и ≈ Serbian ј in лајковац
 		}
 		for _, tc := range cases {
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
-				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
-				gotID := stationNameToID[results[0].Word]
-				assert.Equal(t, tc.wantID, gotID,
-					"query %q: top result %q (ID %d) should be station ID %d",
-					tc.query, results[0].Word, gotID, tc.wantID)
+				require.NotEmpty(t, results, "query %q: got no results, want %q", tc.query, tc.wantName)
+				gotName := nameToStationName[results[0].Word]
+				assert.Equal(t, tc.wantName, gotName,
+					"query %q: top result %q maps to %q, want %q",
+					tc.query, results[0].Word, gotName, tc.wantName)
 			})
 		}
 	})
 }
 
 func TestScoreBounds(t *testing.T) {
-	matcher, _ := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 
 	t.Run("ExactMatchScoresHigh", func(t *testing.T) {
 		results := matcher.Find("podgorica")
@@ -451,74 +508,52 @@ func TestScoreBounds(t *testing.T) {
 }
 
 func TestOfficialStationNames(t *testing.T) {
-	officialMatcher, officialNameToID := newOfficialMatcher()
+	officialMatcher := approxmatch.NewMatcher(lo.Keys(officialNameToStationName), nil)
 
-	for _, station := range integration.StationIdToStationMap {
+	for _, station := range integration.Stations {
+		if station.Blacklisted {
+			continue
+		}
 		t.Run(station.Name, func(t *testing.T) {
 			results := officialMatcher.Find(station.Name)
 			require.NotEmpty(t, results, "station %q: no results for Name", station.Name)
-			assert.Equal(t, station.Id, officialNameToID[results[0].Word],
-				"station %q: top result %q should be station ID %d",
-				station.Name, results[0].Word, station.Id)
+			assert.Equal(t, station.Name, officialNameToStationName[results[0].Word],
+				"station %q: top result %q should map to %q",
+				station.Name, results[0].Word, station.Name)
 
-			if station.NameEn != station.Name {
+			if station.NameEn != station.Name && station.NameEn != "" {
 				results = officialMatcher.Find(station.NameEn)
 				require.NotEmpty(t, results, "station %q: no results for NameEn %q", station.Name, station.NameEn)
-				assert.Equal(t, station.Id, officialNameToID[results[0].Word],
-					"station %q: NameEn %q top result %q should be station ID %d",
-					station.Name, station.NameEn, results[0].Word, station.Id)
+				assert.Equal(t, station.Name, officialNameToStationName[results[0].Word],
+					"station %q: NameEn %q top result %q should map to %q",
+					station.Name, station.NameEn, results[0].Word, station.Name)
 			}
 
 			results = officialMatcher.Find(station.NameCyr)
 			require.NotEmpty(t, results, "station %q: no results for NameCyr %q", station.Name, station.NameCyr)
-			assert.Equal(t, station.Id, officialNameToID[results[0].Word],
-				"station %q: NameCyr %q top result %q should be station ID %d",
-				station.Name, station.NameCyr, results[0].Word, station.Id)
+			assert.Equal(t, station.Name, officialNameToStationName[results[0].Word],
+				"station %q: NameCyr %q top result %q should map to %q",
+				station.Name, station.NameCyr, results[0].Word, station.Name)
 		})
 	}
 }
 
 func TestAliasesMatchOfficialStations(t *testing.T) {
-	officialMatcher, officialNameToID := newOfficialMatcher()
-	stationNameToID := officialStationNameToStationID()
+	officialMatcher := approxmatch.NewMatcher(lo.Keys(officialNameToStationName), nil)
 
-	for _, aliasEntry := range integration.AliasesStationsList {
-		wantID := stationNameToID[aliasEntry.StationName]
-		t.Run(aliasEntry.StationName, func(t *testing.T) {
-			for _, alias := range aliasEntry.Aliases {
+	for _, station := range integration.Stations {
+		if station.Blacklisted || len(station.ProductionAliases) == 0 {
+			continue
+		}
+		t.Run(station.Name, func(t *testing.T) {
+			for _, alias := range station.ProductionAliases {
 				t.Run(alias, func(t *testing.T) {
-					switch alias {
-					case "New Belgrade":
-						// English translation absent from official names index;
-						// NameEn is "Novi Beograd". "nevbelgrade" scores higher against
-						// "belgradecenter" than "novibeograd".
-						t.Skip("cross-language translation absent from official names index")
-					case "Новый Белград":
-						// Russian "Белград" (belgrad) does not normalise to Serbian
-						// "Београд" (beograd); the spelling divergence drops the score
-						// below DefaultScoreThreshold.
-						t.Skip("Russian spelling of Belgrade diverges from Serbian Cyrillic form")
-					case "Штитарица река":
-						// Russian "Штитарица" misses the "-ичка" suffix of the official
-						// "Štitarička"; the truncated form scores below DefaultScoreThreshold.
-						t.Skip("truncated Russian transliteration scores below DefaultScoreThreshold")
-					case "Слепец мост":
-						// Russian "Слепец" (blind man) is a folk-etymology variant of
-						// "Сљепач"/"Slijepač"; the spelling divergence drops the score
-						// below DefaultScoreThreshold.
-						t.Skip("Russian folk-etymology variant diverges from official spelling")
-					case "Прицеље":
-						// Cyrillic "Прицеље" does not share enough normalised characters
-						// with Latin "Pričelje" to clear DefaultScoreThreshold in the
-						// official matcher (which indexes only Name/NameEn/NameCyr).
-						t.Skip("Cyrillic variant scores below DefaultScoreThreshold in official index")
-					}
 					results := officialMatcher.Find(alias)
-					require.NotEmpty(t, results, "alias %q → station %q: no results in official list", alias, aliasEntry.StationName)
-					gotID := officialNameToID[results[0].Word]
-					assert.Equal(t, wantID, gotID,
-						"alias %q → station %q: top result %q (ID %d) should be station ID %d",
-						alias, aliasEntry.StationName, results[0].Word, gotID, wantID)
+					require.NotEmpty(t, results, "alias %q → station %q: no results in official list", alias, station.Name)
+					gotName := officialNameToStationName[results[0].Word]
+					assert.Equal(t, station.Name, gotName,
+						"alias %q → station %q: top result %q maps to %q, want %q",
+						alias, station.Name, results[0].Word, gotName, station.Name)
 				})
 			}
 		})
@@ -530,36 +565,32 @@ func TestBlacklistedStationsNoMatch(t *testing.T) {
 	// reach scores just above DefaultScoreThreshold. A slightly stricter threshold
 	// eliminates them while keeping all legitimate station matches. This test
 	// demonstrates passing a custom threshold to NewMatcher.
-	const strictMatchThreshold = 0.6
-	officialMatcher, _ := newOfficialMatcherWithThreshold(strictMatchThreshold)
+	strictThreshold := 0.6
+	officialMatcher := approxmatch.NewMatcher(lo.Keys(officialNameToStationName), &strictThreshold)
 
-	for _, blacklisted := range integration.BlackListedStations {
-		for _, name := range blacklisted.Names {
+	for _, station := range integration.Stations {
+		if !station.Blacklisted {
+			continue
+		}
+		for _, name := range lo.Compact([]string{station.Name, station.NameCyr}) {
 			t.Run(name, func(t *testing.T) {
 				results := officialMatcher.Find(name)
+				var resultWord string
+				var resultScore float64
+				if len(results) > 0 {
+					resultWord = results[0].Word
+					resultScore = results[0].Score
+				}
 				assert.Empty(t, results,
 					"query %q: expected no results at strict threshold, got top result %q (score %.3f)",
-					name, func() string {
-						if len(results) > 0 {
-							return results[0].Word
-						}
-						return ""
-					}(), func() float64 {
-						if len(results) > 0 {
-							return results[0].Score
-						}
-						return 0
-					}())
+					name, resultWord, resultScore)
 			})
 		}
 	}
 }
 
 func BenchmarkNewMatcher(b *testing.B) {
-	names := make([]string, 0, len(integration.UnifiedStationNameToStationIdMap))
-	for name := range integration.UnifiedStationNameToStationIdMap {
-		names = append(names, name)
-	}
+	names := lo.Keys(nameToStationName)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		approxmatch.NewMatcher(names, nil)
@@ -567,7 +598,7 @@ func BenchmarkNewMatcher(b *testing.B) {
 }
 
 func BenchmarkFind(b *testing.B) {
-	matcher, _ := newUnifiedMatcher()
+	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
 	queries := []string{
 		"belgrade", "podgorica", "padgareeka", "sjutamare", "belo pole",
 		"novi sad", "stara pazova",

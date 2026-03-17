@@ -3,6 +3,7 @@ module github.com/ivanov-gv/approximate-match
 go 1.26.1
 
 require (
+	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/text v0.34.0
 )

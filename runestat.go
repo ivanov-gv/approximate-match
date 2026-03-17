@@ -19,20 +19,20 @@ func lenPrefix(sample string, candidates ...string) int {
 
 	for sampleByteOffset, sampleRune := range sample {
 		matched := false
-		for i, candidate := range candidates {
-			if candidateEnded[i] {
+		for candidateIndex, candidate := range candidates {
+			if candidateEnded[candidateIndex] {
 				continue
 			}
-			if candidateByteOffsets[i] >= len(candidate) {
-				candidateEnded[i] = true
+			if candidateByteOffsets[candidateIndex] >= len(candidate) {
+				candidateEnded[candidateIndex] = true
 				continue
 			}
-			candidateRune, runeSize := utf8.DecodeRuneInString(candidate[candidateByteOffsets[i]:])
+			candidateRune, runeSize := utf8.DecodeRuneInString(candidate[candidateByteOffsets[candidateIndex]:])
 			if sampleRune == candidateRune {
 				matched = true
-				candidateByteOffsets[i] += runeSize
+				candidateByteOffsets[candidateIndex] += runeSize
 			} else {
-				candidateEnded[i] = true
+				candidateEnded[candidateIndex] = true
 			}
 		}
 		if !matched {
