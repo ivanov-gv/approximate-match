@@ -32,7 +32,6 @@ func TestPositiveCases(t *testing.T) {
 			{"subotica", -8},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -57,7 +56,6 @@ func TestPositiveCases(t *testing.T) {
 			{"beograd centar", 18},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -85,7 +83,6 @@ func TestPositiveCases(t *testing.T) {
 			{"bijelopolje", 7},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -113,7 +110,6 @@ func TestPhoneticCases(t *testing.T) {
 			{"sutomare", 2},   // o→a vowel confusion
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -135,7 +131,6 @@ func TestPhoneticCases(t *testing.T) {
 			{"bijelo polje", 7},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -161,7 +156,6 @@ func TestPhoneticCases(t *testing.T) {
 			{"shkoder", -40},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -265,7 +259,6 @@ func TestFalsePositives(t *testing.T) {
 
 	t.Run("UnrelatedInputsHaveLowScore", func(t *testing.T) {
 		for _, query := range []string{"london", "chicago"} {
-			query := query
 			t.Run(query, func(t *testing.T) {
 				results := matcher.Find(query)
 				assert.Empty(t, results,
@@ -301,7 +294,6 @@ func TestFalseNegatives(t *testing.T) {
 		{"herceg novi", -30},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.query, func(t *testing.T) {
 			results := matcher.Find(tc.query)
 			require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -330,7 +322,6 @@ func TestCyrillicCases(t *testing.T) {
 			{"мојковац", 6},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -354,7 +345,6 @@ func TestCyrillicCases(t *testing.T) {
 			{"београд центар", 18},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -380,7 +370,6 @@ func TestCyrillicCases(t *testing.T) {
 			{"требальево", 38}, // Russian ль ≈ Serbian љ
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -402,7 +391,6 @@ func TestCyrillicCases(t *testing.T) {
 			{"голубовцы", 3}, // Russian ы ≈ Serbian и at word end
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -428,7 +416,6 @@ func TestCyrillicCases(t *testing.T) {
 			{"лаиковац", 15},   // Russian и ≈ Serbian ј in лајковац
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.query, func(t *testing.T) {
 				results := matcher.Find(tc.query)
 				require.NotEmpty(t, results, "query %q: got no results, want station ID %d", tc.query, tc.wantID)
@@ -467,7 +454,6 @@ func TestOfficialStationNames(t *testing.T) {
 	officialMatcher, officialNameToID := newOfficialMatcher()
 
 	for _, station := range integration.StationIdToStationMap {
-		station := station
 		t.Run(station.Name, func(t *testing.T) {
 			results := officialMatcher.Find(station.Name)
 			require.NotEmpty(t, results, "station %q: no results for Name", station.Name)
@@ -497,11 +483,9 @@ func TestAliasesMatchOfficialStations(t *testing.T) {
 	stationNameToID := officialStationNameToStationID()
 
 	for _, aliasEntry := range integration.AliasesStationsList {
-		aliasEntry := aliasEntry
 		wantID := stationNameToID[aliasEntry.StationName]
 		t.Run(aliasEntry.StationName, func(t *testing.T) {
 			for _, alias := range aliasEntry.Aliases {
-				alias := alias
 				t.Run(alias, func(t *testing.T) {
 					switch alias {
 					case "New Belgrade":
@@ -550,9 +534,7 @@ func TestBlacklistedStationsNoMatch(t *testing.T) {
 	officialMatcher, _ := newOfficialMatcherWithThreshold(strictMatchThreshold)
 
 	for _, blacklisted := range integration.BlackListedStations {
-		blacklisted := blacklisted
 		for _, name := range blacklisted.Names {
-			name := name
 			t.Run(name, func(t *testing.T) {
 				results := officialMatcher.Find(name)
 				assert.Empty(t, results,
