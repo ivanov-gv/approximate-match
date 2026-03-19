@@ -6,7 +6,7 @@ lint:
 
 .PHONY: test
 test:
-	go test -count=1 ./...
+	go test -count=1 -race ./...
 
 clean:
 	rm -f ${BUILD_DIR}/${APP_NAME}

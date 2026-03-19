@@ -9,9 +9,9 @@ import (
 
 func TestNormalize(t *testing.T) {
 	cases := []struct {
-		name string
-		in   string
-		want string
+		name     string
+		input    string
+		expected string
 	}{
 		{"Lowercase", "Podgorica", "podgorica"},
 		{"AllCaps", "BELGRADE", "belgrade"},
@@ -29,19 +29,20 @@ func TestNormalize(t *testing.T) {
 		{"IjekavicaAndDigraph", "Prijepolje", "prepole"},
 		{"DigraphDJ", "dj", "d"},
 		{"DigraphNJ", "nj", "n"},
+		{"DjakovicaDj", "đakovica", "dakovica"}, // đ has no NFD decomposition; handled by explicit rule
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, approxmatch.Normalize(tc.in))
+			assert.Equal(t, tc.expected, approxmatch.Normalize(tc.input))
 		})
 	}
 }
 
 func TestNormalizeCyrillic(t *testing.T) {
 	cases := []struct {
-		name string
-		in   string
-		want string
+		name     string
+		input    string
+		expected string
 	}{
 		// Russian soft-sign sequences converge with Serbian Cyrillic ligatures.
 		{"RussianSoftL_ValEvo", "вальево", "валево"},
@@ -65,16 +66,16 @@ func TestNormalizeCyrillic(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, approxmatch.Normalize(tc.in))
+			assert.Equal(t, tc.expected, approxmatch.Normalize(tc.input))
 		})
 	}
 }
 
 func TestConsonantSkeleton(t *testing.T) {
 	cases := []struct {
-		name string
-		in   string
-		want string
+		name     string
+		input    string
+		expected string
 	}{
 		{"Podgorica", "podgorica", "pdgrc"},
 		{"PadgareekaPodgoricaConverge", "padgarika", "pdgrk"},
@@ -94,7 +95,7 @@ func TestConsonantSkeleton(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, approxmatch.ConsonantSkeleton(tc.in))
+			assert.Equal(t, tc.expected, approxmatch.ConsonantSkeleton(tc.input))
 		})
 	}
 }

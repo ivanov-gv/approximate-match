@@ -497,12 +497,14 @@ func TestScoreBounds(t *testing.T) {
 
 	t.Run("AllScoresInRange", func(t *testing.T) {
 		for _, query := range []string{"podgorica", "belgrade", "padgareeka", "xyz", "novi sad"} {
-			for _, r := range matcher.Find(query) {
-				assert.GreaterOrEqual(t, r.Score, approxmatch.DefaultScoreThreshold,
-					"query %q: score %.3f below threshold for %q", query, r.Score, r.Word)
-				assert.LessOrEqual(t, r.Score, 1.0,
-					"query %q: score %.3f above 1 for %q", query, r.Score, r.Word)
-			}
+			t.Run(query, func(t *testing.T) {
+				for _, result := range matcher.Find(query) {
+					assert.GreaterOrEqual(t, result.Score, approxmatch.DefaultScoreThreshold,
+						"query %q: score %.3f below threshold for %q", query, result.Score, result.Word)
+					assert.LessOrEqual(t, result.Score, 1.0,
+						"query %q: score %.3f above 1 for %q", query, result.Score, result.Word)
+				}
+			})
 		}
 	})
 }
@@ -510,10 +512,10 @@ func TestScoreBounds(t *testing.T) {
 func TestOfficialStationNames(t *testing.T) {
 	officialMatcher := approxmatch.NewMatcher(lo.Keys(officialNameToStationName), nil)
 
-	for _, station := range integration.Stations {
-		if station.Blacklisted {
-			continue
-		}
+	nonBlacklistedStations := lo.Filter(integration.Stations, func(station integration.StationData, _ int) bool {
+		return !station.Blacklisted
+	})
+	for _, station := range nonBlacklistedStations {
 		t.Run(station.Name, func(t *testing.T) {
 			results := officialMatcher.Find(station.Name)
 			require.NotEmpty(t, results, "station %q: no results for Name", station.Name)
@@ -541,10 +543,10 @@ func TestOfficialStationNames(t *testing.T) {
 func TestAliasesMatchOfficialStations(t *testing.T) {
 	officialMatcher := approxmatch.NewMatcher(lo.Keys(officialNameToStationName), nil)
 
-	for _, station := range integration.Stations {
-		if station.Blacklisted || len(station.ProductionAliases) == 0 {
-			continue
-		}
+	stationsWithAliases := lo.Filter(integration.Stations, func(station integration.StationData, _ int) bool {
+		return !station.Blacklisted && len(station.ProductionAliases) > 0
+	})
+	for _, station := range stationsWithAliases {
 		t.Run(station.Name, func(t *testing.T) {
 			for _, alias := range station.ProductionAliases {
 				t.Run(alias, func(t *testing.T) {
@@ -586,25 +588,5 @@ func TestBlacklistedStationsNoMatch(t *testing.T) {
 					name, resultWord, resultScore)
 			})
 		}
-	}
-}
-
-func BenchmarkNewMatcher(b *testing.B) {
-	names := lo.Keys(nameToStationName)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		approxmatch.NewMatcher(names, nil)
-	}
-}
-
-func BenchmarkFind(b *testing.B) {
-	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)
-	queries := []string{
-		"belgrade", "podgorica", "padgareeka", "sjutamare", "belo pole",
-		"novi sad", "stara pazova",
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		matcher.Find(queries[i%len(queries)])
 	}
 }

@@ -35,7 +35,6 @@ type StationData struct {
 // Stations is the single source of truth for all station test data.
 // Official stations (Id > 0) are followed by blacklisted locations (Id < 0).
 var Stations = []StationData{
-	// ── Official stations ────────────────────────────────────────────────────
 	{
 		Id: 1, ZpcgStopId: 1, Type: 4,
 		Name: "Bar", NameEn: "Bar", NameCyr: "Бар",
@@ -368,7 +367,6 @@ var Stations = []StationData{
 		Name: "Bačka Topola", NameEn: "Backa Topola", NameCyr: "Бачка Топола",
 	},
 
-	// ── Blacklisted locations ─────────────────────────────────────────────────
 	// These are cities near the railway network that have no active train service.
 	// They are present so tests can verify the matcher does NOT surface them
 	// when the official station index is searched with a strict threshold.
