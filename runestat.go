@@ -5,7 +5,7 @@ import "unicode/utf8"
 // RuneStat holds the occurrence count of a rune in a string and all substrings
 // of that string starting at each occurrence position.
 type RuneStat struct {
-	num        int
+	count      int
 	substrings []string
 }
 
@@ -42,29 +42,18 @@ func lenPrefix(sample string, candidates ...string) int {
 	return len(sample)
 }
 
-// buildRuneStats returns, for every character in s, its count and all
-// substrings of s starting at that character's position. Used by the
-// substring-prefix matching in matchScore.
-func buildRuneStats(s string) map[rune]RuneStat {
-	stats := make(map[rune]RuneStat, len(s))
-	for byteOffset, char := range s {
+// buildRuneStats returns, for every character in input, its count and all
+// substrings of input starting at that character's position, plus the total
+// rune count of input. Used by the substring-prefix matching in matchScore.
+func buildRuneStats(input string) (map[rune]RuneStat, int) {
+	stats := make(map[rune]RuneStat, len(input))
+	runeCount := 0
+	for byteOffset, char := range input {
 		stat := stats[char]
-		stat.num++
-		stat.substrings = append(stat.substrings, s[byteOffset:])
+		stat.count++
+		stat.substrings = append(stat.substrings, input[byteOffset:])
 		stats[char] = stat
+		runeCount++
 	}
-	return stats
-}
-
-// calcAbsDiffSum sums the absolute character-frequency deltas.
-func calcAbsDiffSum(charFreqDelta map[rune]int) int {
-	total := 0
-	for _, delta := range charFreqDelta {
-		if delta > 0 {
-			total += delta
-		} else {
-			total -= delta
-		}
-	}
-	return total
+	return stats, runeCount
 }

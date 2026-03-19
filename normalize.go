@@ -14,8 +14,8 @@ import (
 // and ASCII spaces.
 type diacriticOrSpaceSet struct{}
 
-func (diacriticOrSpaceSet) Contains(r rune) bool {
-	return unicode.Is(unicode.Mn, r) || r == ' '
+func (diacriticOrSpaceSet) Contains(char rune) bool {
+	return unicode.Is(unicode.Mn, char) || char == ' '
 }
 
 // normReplacements is applied in order during phonetic normalization.
@@ -76,23 +76,23 @@ var normReplacements = [][2]string{
 // marks (covering š→s, č→c, ž→z, ć→c and many others), removes spaces,
 // lowercases, then applies phonetic equivalence rules so that
 // different-but-equivalent spellings converge to the same form.
-func Normalize(s string) string {
-	t := transform.Chain(norm.NFD, runes.Remove(diacriticOrSpaceSet{}), norm.NFC)
-	s, _, _ = transform.String(t, s)
-	s = strings.ToLower(s)
+func Normalize(input string) string {
+	transformer := transform.Chain(norm.NFD, runes.Remove(diacriticOrSpaceSet{}), norm.NFC)
+	input, _, _ = transform.String(transformer, input)
+	input = strings.ToLower(input)
 	for _, replacement := range normReplacements {
-		s = strings.ReplaceAll(s, replacement[0], replacement[1])
+		input = strings.ReplaceAll(input, replacement[0], replacement[1])
 	}
-	return s
+	return input
 }
 
 // ConsonantSkeleton removes all vowels from an already-normalized string.
 // This lets the matcher handle severe vowel confusion,
 // e.g. "padgareeka" → pdgrk ≈ pdgrc ← podgorica.
-func ConsonantSkeleton(s string) string {
+func ConsonantSkeleton(input string) string {
 	var builder strings.Builder
-	builder.Grow(len(s))
-	for _, char := range s {
+	builder.Grow(len(input))
+	for _, char := range input {
 		switch char {
 		case 'a', 'e', 'i', 'o', 'u',
 			'а', 'е', 'и', 'о', 'у', 'я': // Cyrillic vowels (ю→у and ы→и already handled by Normalize)
