@@ -29,6 +29,7 @@ func TestNormalize(t *testing.T) {
 		{"IjekavicaAndDigraph", "Prijepolje", "prepole"},
 		{"DigraphDJ", "dj", "d"},
 		{"DigraphNJ", "nj", "n"},
+		{"DjakovicaDj", "đakovica", "dakovica"}, // đ has no NFD decomposition; handled by explicit rule
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

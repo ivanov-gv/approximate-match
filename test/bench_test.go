@@ -34,7 +34,7 @@ func BenchmarkNewMatcher(b *testing.B) {
 	}
 }
 
-// BenchmarkFind — full station list (~370 entries), AMD Ryzen 7 5700U:
+// BenchmarkFind — full station alias list (~240 entries), AMD Ryzen 7 5700U:
 // 112498 ns/op, 12560 B/op, 24 allocs/op
 func BenchmarkFind(b *testing.B) {
 	matcher := approxmatch.NewMatcher(lo.Keys(nameToStationName), nil)

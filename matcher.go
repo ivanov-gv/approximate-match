@@ -66,7 +66,8 @@ func NewMatcher(words []string, threshold *float64) *Matcher {
 }
 
 // Find returns all entries from the search list ranked by similarity to sample,
-// best first. Entries with no commonality at all are omitted.
+// best first. Entries whose score falls below the threshold configured in
+// NewMatcher are omitted; pass a lower threshold to include weaker matches.
 func (m *Matcher) Find(sample string) []Match {
 	normalizedSample := Normalize(sample)
 	skeletonSample := ConsonantSkeleton(normalizedSample)
@@ -98,7 +99,7 @@ func (m *Matcher) Find(sample string) []Match {
 // matchScore returns a value in [0, 1] measuring how closely word matches
 // sample. Both sampleStats and wordStats must be precomputed by buildRuneStats,
 // with their respective rune counts.
-// 0 means no shared characters at all.
+// 0 means no common substring was found (or either input is empty).
 func matchScore(sample string, sampleStats map[rune]RuneStat, sampleRuneCount int, word string, wordStats map[rune]RuneStat, wordRuneCount int) float64 {
 	if len(sample) == 0 || len(word) == 0 {
 		return 0
@@ -130,7 +131,8 @@ func matchScore(sample string, sampleStats map[rune]RuneStat, sampleRuneCount in
 	// sample length rather than the longer length. This prevents a shorter word that
 	// merely contains the query as an interior substring from outscoring a longer word
 	// that starts with the full query (e.g. "beograd" should prefer "beogradcentar"
-	// over "novibeograd").
+	// over "novibeograd"). The bonus only activates when word is strictly longer than
+	// sample; otherwise lcsRatio is already 1.0 and leadingRatio cannot exceed it.
 	if longestCommonSubstrIsLeading && longestCommonSubstr == len(sample) {
 		leadingRatio := float64(longestCommonSubstr) / float64(len(sample))
 		if leadingRatio > lcsRatio {
