@@ -12,7 +12,7 @@ clean:
 	rm -f ${BUILD_DIR}/${APP_NAME}
 
 build: clean
-	go build -o ${BUILD_DIR}/${APP_NAME} ./...
+	go build -o ${BUILD_DIR}/${APP_NAME} ./cmd/
 
 run: build
 	${BUILD_DIR}/${APP_NAME}
