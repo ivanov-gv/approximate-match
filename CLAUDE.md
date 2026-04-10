@@ -1,5 +1,11 @@
 # Development Guidelines
 
+This project follows guidelines from https://github.com/ivanov-gv/claude-code-setup/tree/main/.claude/shared/guidelines 
+
+See the files for Project structure convention, Naming conventions and others. 
+Start with https://github.com/ivanov-gv/claude-code-setup/tree/main/.claude/CLAUDE.md
+
+
 ## Codebase Overview
 
 This is a fuzzy string matching library for station/location names, designed to handle linguistic variation: diacritics, phonetic equivalences, dialect variants (Serbian ekavica/ijekavica), Cyrillic transliterations, and minor typos. The public API is:
@@ -8,31 +14,6 @@ This is a fuzzy string matching library for station/location names, designed to 
 matcher := approximatematch.NewMatcher(wordList, nil)  // nil = use DefaultScoreThreshold
 results := matcher.Find(query)  // []Match, sorted by Score descending
 ```
-
-### Package Layout
-
-```
-approximatematch/       (root package — library)
-  matcher.go            Matcher struct, Find(), matchScore()
-  normalize.go          Normalize(), ConsonantSkeleton()
-  runestat.go           RuneStat, buildRuneStats(), lenPrefix()
-
-cmd/
-  main.go               main() only — demo entry point
-
-test/
-  stations.go           Test fixture: StationData struct + Stations slice
-  matcher_test.go       Integration tests (all linguistic test groups)
-  bench_test.go         Benchmarks (small synthetic list + full station list)
-
-matcher_test.go         Unit tests: score bounds, edge cases (package approxmatch_test)
-normalize_test.go       Unit tests: Normalize() and ConsonantSkeleton() cases (package approxmatch_test)
-runestat_test.go        Unit tests: buildRuneStats(), lenPrefix() (package approxmatch — internal)
-```
-
-The `test/` directory is its own package (`package integration_test`) to keep the large station fixture and integration tests separate from the library's unit tests.
-
-Internal unit tests (those that must access unexported functions like `buildRuneStats` and `lenPrefix`) live in the root package using `package approxmatch` — without the `_test` suffix. External unit tests use `package approxmatch_test`.
 
 ### Matching Algorithm
 
